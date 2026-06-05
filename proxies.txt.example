@@ -1,0 +1,10 @@
+# One proxy URL per line. Supports http, https, socks5.
+# Lines starting with # are ignored. Blank lines are skipped.
+#
+# Examples:
+# http://user:pass@residential-proxy1:8080
+# http://user:pass@residential-proxy2:8080
+# socks5://user:pass@socks-proxy:1080
+#
+# Tip: Use residential proxies for Twitter scraping.
+# Datacenter proxies are easily detected and blocked.

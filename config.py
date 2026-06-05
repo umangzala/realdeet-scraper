@@ -31,6 +31,11 @@ REQUEST_DELAY_SECONDS = 5      # delay between queries (rate limit safety)
 COOKIES_FILE = "cookies.json"  # persisted Twitter session cookies
 MIN_FOLLOWER_COUNT = 20        # ignore accounts below this (bots/noise)
 
+# ── Proxy Settings ───────────────────────────────────────────────────────────
+PROXIES_FILE = "proxies.txt"            # optional: one proxy URL per line
+PROXY_MAX_FAILURES = 3                  # disable proxy after N consecutive failures
+PROXY_HEALTH_CHECK_TIMEOUT = 10         # seconds to wait for health check
+
 # ── Classification Thresholds ────────────────────────────────────────────────
 HIGH_URGENCY_KEYWORDS = ["asap", "urgent", "today", "immediately", "deadline", "by friday", "this week"]
 

@@ -4,7 +4,21 @@ import os
 import json
 from openai import AsyncOpenAI
 
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+_client = None
+_no_key_warned = False
+
+def _get_client():
+    """Lazy-init the OpenAI client. Returns None if no API key is configured."""
+    global _client, _no_key_warned
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key or api_key.startswith("sk-..."):
+        if not _no_key_warned:
+            print("⚠️  OPENAI_API_KEY not set — classifier will skip (all tweets treated as non-requirements)")
+            _no_key_warned = True
+        return None
+    if _client is None:
+        _client = AsyncOpenAI(api_key=api_key)
+    return _client
 
 SYSTEM_PROMPT = """You are a classifier for Realdeet, a marketplace platform connecting brands with AI artists, AI image generators, AI video creators, and video editors.
 
@@ -41,6 +55,39 @@ async def classify_tweet(tweet: dict) -> dict:
     Returns a classification dict. Falls back to safe defaults on error.
     """
     try:
+        openai_client = _get_client()
+        if openai_client is None:
+            # Fallback to local heuristic classifier when API key is missing
+            text = tweet["text"].lower()
+            is_req = any(kw in text for kw in ["looking for", "need a", "hiring", "seeking", "commission", "want to buy", "looking to buy"])
+            
+            if is_req:
+                category = "video_edit" if "edit" in text else ("ai_video" if "video" in text else ("ai_image" if any(x in text for x in ["art", "image", "draw", "illustrat", "artist"]) else "other"))
+                urgency = "high" if any(kw in text for kw in ["asap", "urgent", "today", "immediately", "deadline", "fast"]) else "medium"
+                has_budget = any(kw in text for kw in ["budget", "$", "usd", "pay", "paying", "rate"])
+                
+                # Create a clean summary
+                summary = tweet["text"].replace("\n", " ")[:80]
+                if len(tweet["text"]) > 80:
+                    summary += "..."
+                
+                return {
+                    "is_requirement": True,
+                    "category": category,
+                    "urgency": urgency,
+                    "has_budget_signal": has_budget,
+                    "is_brand_or_business": False,
+                    "summary": f"[Heuristic] {summary}",
+                }
+            return {
+                "is_requirement": False,
+                "category": "other",
+                "urgency": "low",
+                "has_budget_signal": False,
+                "is_brand_or_business": False,
+                "summary": "",
+            }
+
         prompt = USER_PROMPT.format(
             tweet_text=tweet["text"],
             bio=tweet["profile"].get("bio", ""),
@@ -48,7 +95,7 @@ async def classify_tweet(tweet: dict) -> dict:
             retweets=tweet.get("retweets", 0),
         )
 
-        response = await client.chat.completions.create(
+        response = await openai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},

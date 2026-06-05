@@ -1,5 +1,13 @@
 # main.py — Realdeet Twitter Scraper: FastAPI app + scheduled job
 
+import sys
+if sys.platform.startswith('win'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
 import asyncio
 import os
 from contextlib import asynccontextmanager
@@ -13,13 +21,15 @@ from fastapi.responses import JSONResponse
 
 from classifier import classify_batch
 from config import SEARCH_QUERIES, SCRAPE_INTERVAL_MINUTES, TWEETS_PER_QUERY
-from database import get_client, tweet_exists, save_lead, get_leads
+from database import get_client, tweet_exists, save_lead, get_leads, reset_db_cache, update_lead_status as update_lead_status_db
+from proxy_manager import ProxyManager
 from twitter_client import TwitterClient
 
 load_dotenv()
 
 # ── Singletons ────────────────────────────────────────────────────────────────
-twitter = TwitterClient()
+proxy_manager = ProxyManager()
+twitter = TwitterClient(proxy_manager=proxy_manager)
 supabase = get_client()
 scheduler = AsyncIOScheduler()
 
@@ -32,7 +42,11 @@ async def send_slack_alert(tweet: dict, classification: dict):
     """Send a Slack notification for high-urgency leads."""
     if not SLACK_WEBHOOK:
         return
-    urgency_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(
+    urgency_icon = {
+        "high": "🔴", 
+        "medium": "🟡", 
+        "low": "🟢"
+        }.get(
         classification["urgency"], "⚪"
     )
     message = {
@@ -62,6 +76,9 @@ async def run_scrape_job():
     print(f"{'='*60}")
 
     try:
+        # Reset local cache to reload seen IDs from CSV
+        reset_db_cache()
+
         # Step 1: Fetch tweets
         all_tweets = await twitter.search_all_queries(SEARCH_QUERIES, count=TWEETS_PER_QUERY)
 
@@ -161,8 +178,20 @@ async def list_leads(
 @app.patch("/leads/{post_id}/status")
 async def update_lead_status(post_id: str, status: str, notes: str = None):
     """Update a lead's status (for BD team use)."""
-    data = {"status": status}
-    if notes:
-        data["notes"] = notes
-    supabase.table("posts").update(data).eq("id", post_id).execute()
+    success = await update_lead_status_db(supabase, post_id, status, notes)
+    if not success:
+        return JSONResponse(status_code=404, content={"message": f"Lead {post_id} not found in CSV"})
     return {"message": f"Lead {post_id} updated to '{status}'"}
+
+
+@app.get("/proxies/status")
+async def proxy_status():
+    """Get current proxy pool status (no network calls)."""
+    return proxy_manager.get_status()
+
+
+@app.get("/proxies/health")
+async def proxy_health():
+    """Run a health check against all configured proxies."""
+    report = await proxy_manager.health_check()
+    return report
