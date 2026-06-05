@@ -4,7 +4,6 @@
 #   chmod +x push_to_github.sh && ./push_to_github.sh
 set -e
 
-TOKEN="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"
 USERNAME="umangzala"
 REPO="realdeet-scraper"
 
