@@ -1,5 +1,6 @@
 # twitter_client.py — Twitter session via twikit (internal API, no key needed)
 
+from config import EXCLUDE_PATTERNS,MAX_TWEET_AGE_DAYS
 import sys
 if sys.platform.startswith('win'):
     try:
@@ -166,6 +167,7 @@ class TwitterClient:
         Extract a clean dict from a twikit Tweet object.
         Returns None if the tweet doesn't pass basic quality filters.
         """
+        
         try:
             user = tweet.user
 
@@ -174,17 +176,17 @@ class TwitterClient:
             if followers < MIN_FOLLOWER_COUNT:
                 return None
 
+            # Filter out tweets older than 1 day
+            from datetime import datetime, timedelta, timezone
+            tweet_dt = tweet.created_at_datetime
+            compare_dt = datetime.now(timezone.utc) if tweet_dt.tzinfo else datetime.now()
+            if tweet_dt < compare_dt - timedelta(days=MAX_TWEET_AGE_DAYS):
+                return None
+
             # Skip if the account bio looks like an artist self-promoting
             # (we want buyers, not sellers)
             bio = getattr(user, "description", "") or ""
-            artist_self_promo_signals = [
-                "commissions open",
-                "available for commissions",
-                "hire me",
-                "my portfolio",
-                "digital artist",
-                "ai artist",
-            ]
+            artist_self_promo_signals = EXCLUDE_PATTERNS
             if any(signal in bio.lower() for signal in artist_self_promo_signals):
                 return None
 
